@@ -1,0 +1,5 @@
+{
+  "name": "OrbitOS DaaS Dashboard",
+  "description": "An administrative dashboard for a Design-as-a-Service (DaaS) business to monitor finances, people, work, clients, and onboarding.",
+  "requestFramePermissions": []
+}
