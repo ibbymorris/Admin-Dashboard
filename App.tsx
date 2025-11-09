@@ -261,7 +261,7 @@ const OverviewView = ({ onViewChange, metrics }: { onViewChange: (view: string) 
   </div>
 );
 
-const FinanceView = ({ invoices, onCreateInvoiceClick, metrics }: { invoices: any[], onCreateInvoiceClick: () => void, metrics: any }) => (
+const FinanceView = ({ invoices, onCreateInvoiceClick, onUpdateInvoiceStatus, metrics }: { invoices: any[], onCreateInvoiceClick: () => void, onUpdateInvoiceStatus: (id: number, status: 'Pending' | 'Paid' | 'Overdue') => void, metrics: any }) => (
   <div className="space-y-6 animate-fade-in">
     <SectionHeader title="Finance" subtitle="P&L, Revenue Composition, and Unit Economics" actions={
       <>
@@ -363,9 +363,22 @@ const FinanceView = ({ invoices, onCreateInvoiceClick, metrics }: { invoices: an
               <td className="px-4 py-3">{formatCurrency(invoice.amount)}</td>
               <td className="px-4 py-3 text-slate-500">{format(invoice.dueDate, 'MMM d, yyyy')}</td>
               <td className="px-4 py-3">
-                <Badge variant={invoice.status === 'Paid' ? 'success' : invoice.status === 'Overdue' ? 'danger' : 'warning'}>{invoice.status}</Badge>
+                <select
+                  value={invoice.status}
+                  onChange={(e) => onUpdateInvoiceStatus(invoice.id, e.target.value as 'Pending' | 'Paid' | 'Overdue')}
+                  className={cn(
+                    "px-3 py-1 rounded-full text-xs font-semibold border outline-none cursor-pointer",
+                    invoice.status === 'Paid' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                    invoice.status === 'Overdue' ? 'bg-rose-100 text-rose-800 border-rose-200' :
+                    'bg-amber-100 text-amber-800 border-amber-200'
+                  )}
+                >
+                  <option value="Pending">Pending</option>
+                  <option value="Paid">Paid</option>
+                  <option value="Overdue">Overdue</option>
+                </select>
               </td>
-              <td className="px-4 py-3"><button className="text-indigo-600 hover:text-indigo-900 font-medium text-xs">View</button></td>
+              <td className="px-4 py-3"><button className="text-indigo-600 hover:text-indigo-900 font-medium text-xs">View Details</button></td>
             </tr>
           ))}
         </tbody>
@@ -800,16 +813,20 @@ const CreateReportModal = ({ onClose, onCreate }: { onClose: () => void, onCreat
   );
 }
 
-const ReportsView = () => {
-  const [reports, setReports] = useState(customReportsData);
+const ReportsView = ({
+  reports,
+  onCreateReport,
+  onDeleteReport
+}: {
+  reports: typeof customReportsData;
+  onCreateReport: (report: any) => void;
+  onDeleteReport: (id: number) => void;
+}) => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   const handleCreateReport = (newReport: any) => {
-    setReports(prev => [newReport, ...prev]);
-  };
-  
-  const handleDeleteReport = (id: number) => {
-    setReports(prev => prev.filter(r => r.id !== id));
+    onCreateReport(newReport);
+    setIsCreateModalOpen(false);
   }
 
   return (
@@ -846,7 +863,7 @@ const ReportsView = () => {
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-3">
                     <button className="flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-medium"><Download className="w-4 h-4"/> Download</button>
-                    <button onClick={() => handleDeleteReport(report.id)} className="text-rose-500 hover:text-rose-700"><Trash2 className="w-4 h-4"/></button>
+                    <button onClick={() => onDeleteReport(report.id)} className="text-rose-500 hover:text-rose-700"><Trash2 className="w-4 h-4"/></button>
                   </div>
                 </td>
               </tr>
@@ -1047,20 +1064,35 @@ const InviteStaffModal = ({ onClose, onInvite }: { onClose: () => void, onInvite
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('Designer');
+  const [errors, setErrors] = useState<{name?: string; email?: string}>({});
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email || !role) {
-      alert('Please fill out all fields.');
+    const newErrors: {name?: string; email?: string} = {};
+
+    if (!name.trim()) {
+      newErrors.name = 'Name is required';
+    }
+    if (!email.trim()) {
+      newErrors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      newErrors.email = 'Please enter a valid email address';
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
       return;
     }
+
     onInvite({
       id: Date.now(),
-      name,
+      name: name.trim(),
+      email: email.trim(),
       role,
       stage: 'Invite Sent',
       status: 'waiting',
     });
+    onClose();
   };
   
   return (
@@ -1074,11 +1106,39 @@ const InviteStaffModal = ({ onClose, onInvite }: { onClose: () => void, onInvite
           <div className="p-6 space-y-4">
             <div>
               <label htmlFor="staffName" className="text-sm font-medium text-slate-700 block mb-2">Full Name</label>
-              <input type="text" id="staffName" value={name} onChange={e => setName(e.target.value)} placeholder="e.g., Jane Doe" className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:ring-2 ring-indigo-500/50 outline-none" />
+              <input
+                type="text"
+                id="staffName"
+                value={name}
+                onChange={e => {
+                  setName(e.target.value);
+                  if (errors.name) setErrors({...errors, name: undefined});
+                }}
+                placeholder="e.g., Jane Doe"
+                className={cn(
+                  "w-full px-3 py-2 bg-white border rounded-lg text-sm focus:ring-2 ring-indigo-500/50 outline-none",
+                  errors.name ? "border-rose-300" : "border-slate-300"
+                )}
+              />
+              {errors.name && <p className="text-rose-600 text-xs mt-1">{errors.name}</p>}
             </div>
             <div>
               <label htmlFor="staffEmail" className="text-sm font-medium text-slate-700 block mb-2">Email Address</label>
-              <input type="email" id="staffEmail" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane.doe@example.com" className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:ring-2 ring-indigo-500/50 outline-none" />
+              <input
+                type="email"
+                id="staffEmail"
+                value={email}
+                onChange={e => {
+                  setEmail(e.target.value);
+                  if (errors.email) setErrors({...errors, email: undefined});
+                }}
+                placeholder="jane.doe@example.com"
+                className={cn(
+                  "w-full px-3 py-2 bg-white border rounded-lg text-sm focus:ring-2 ring-indigo-500/50 outline-none",
+                  errors.email ? "border-rose-300" : "border-slate-300"
+                )}
+              />
+              {errors.email && <p className="text-rose-600 text-xs mt-1">{errors.email}</p>}
             </div>
             <div>
               <label htmlFor="staffRole" className="text-sm font-medium text-slate-700 block mb-2">Role</label>
@@ -1106,18 +1166,30 @@ const NewClientModal = ({ onClose, onAddClient }: { onClose: () => void, onAddCl
   const [name, setName] = useState('');
   const [plan, setPlan] = useState('Growth');
   const [mrr, setMrr] = useState('');
+  const [errors, setErrors] = useState<{name?: string; mrr?: string}>({});
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !plan || !mrr) {
-      alert('Please fill out all fields.');
+    const newErrors: {name?: string; mrr?: string} = {};
+
+    if (!name.trim()) {
+      newErrors.name = 'Client name is required';
+    }
+    if (!mrr || parseInt(mrr, 10) <= 0) {
+      newErrors.mrr = 'Please enter a valid MRR amount';
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
       return;
     }
+
     onAddClient({
-      name,
+      name: name.trim(),
       plan,
       mrr: parseInt(mrr, 10)
     });
+    onClose();
   };
   
   return (
@@ -1131,7 +1203,21 @@ const NewClientModal = ({ onClose, onAddClient }: { onClose: () => void, onAddCl
           <div className="p-6 space-y-4">
             <div>
               <label htmlFor="clientName" className="text-sm font-medium text-slate-700 block mb-2">Client Name</label>
-              <input type="text" id="clientName" value={name} onChange={e => setName(e.target.value)} placeholder="e.g., Stark Industries" className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:ring-2 ring-indigo-500/50 outline-none" />
+              <input
+                type="text"
+                id="clientName"
+                value={name}
+                onChange={e => {
+                  setName(e.target.value);
+                  if (errors.name) setErrors({...errors, name: undefined});
+                }}
+                placeholder="e.g., Stark Industries"
+                className={cn(
+                  "w-full px-3 py-2 bg-white border rounded-lg text-sm focus:ring-2 ring-indigo-500/50 outline-none",
+                  errors.name ? "border-rose-300" : "border-slate-300"
+                )}
+              />
+              {errors.name && <p className="text-rose-600 text-xs mt-1">{errors.name}</p>}
             </div>
             <div>
               <label htmlFor="clientPlan" className="text-sm font-medium text-slate-700 block mb-2">Subscription Plan</label>
@@ -1145,8 +1231,23 @@ const NewClientModal = ({ onClose, onAddClient }: { onClose: () => void, onAddCl
               <label htmlFor="clientMrr" className="text-sm font-medium text-slate-700 block mb-2">MRR (Monthly Recurring Revenue)</label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500">$</span>
-                <input type="number" id="clientMrr" value={mrr} onChange={e => setMrr(e.target.value)} placeholder="12000" className="w-full pl-7 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:ring-2 ring-indigo-500/50 outline-none" />
+                <input
+                  type="number"
+                  id="clientMrr"
+                  value={mrr}
+                  onChange={e => {
+                    setMrr(e.target.value);
+                    if (errors.mrr) setErrors({...errors, mrr: undefined});
+                  }}
+                  placeholder="12000"
+                  min="0"
+                  className={cn(
+                    "w-full pl-7 pr-3 py-2 bg-white border rounded-lg text-sm focus:ring-2 ring-indigo-500/50 outline-none",
+                    errors.mrr ? "border-rose-300" : "border-slate-300"
+                  )}
+                />
               </div>
+              {errors.mrr && <p className="text-rose-600 text-xs mt-1">{errors.mrr}</p>}
             </div>
           </div>
           <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
@@ -1164,19 +1265,31 @@ const CreateInvoiceModal = ({ onClose, onCreate, clients }: { onClose: () => voi
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [description, setDescription] = useState('');
+  const [errors, setErrors] = useState<{amount?: string; dueDate?: string}>({});
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clientName || !amount || !dueDate) {
-      alert('Please select a client, amount, and due date.');
+    const newErrors: {amount?: string; dueDate?: string} = {};
+
+    if (!amount || parseInt(amount, 10) <= 0) {
+      newErrors.amount = 'Please enter a valid amount';
+    }
+    if (!dueDate) {
+      newErrors.dueDate = 'Due date is required';
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
       return;
     }
+
     onCreate({
       clientName,
       amount: parseInt(amount, 10),
       dueDate: new Date(dueDate),
-      description,
+      description: description.trim(),
     });
+    onClose();
   };
   
   return (
@@ -1199,12 +1312,40 @@ const CreateInvoiceModal = ({ onClose, onCreate, clients }: { onClose: () => voi
                 <label htmlFor="invoiceAmount" className="text-sm font-medium text-slate-700 block mb-2">Amount</label>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500">$</span>
-                  <input type="number" id="invoiceAmount" value={amount} onChange={e => setAmount(e.target.value)} placeholder="12000" className="w-full pl-7 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:ring-2 ring-indigo-500/50 outline-none" />
+                  <input
+                    type="number"
+                    id="invoiceAmount"
+                    value={amount}
+                    onChange={e => {
+                      setAmount(e.target.value);
+                      if (errors.amount) setErrors({...errors, amount: undefined});
+                    }}
+                    placeholder="12000"
+                    min="0"
+                    className={cn(
+                      "w-full pl-7 pr-3 py-2 bg-white border rounded-lg text-sm focus:ring-2 ring-indigo-500/50 outline-none",
+                      errors.amount ? "border-rose-300" : "border-slate-300"
+                    )}
+                  />
                 </div>
+                {errors.amount && <p className="text-rose-600 text-xs mt-1">{errors.amount}</p>}
               </div>
               <div>
                 <label htmlFor="invoiceDueDate" className="text-sm font-medium text-slate-700 block mb-2">Due Date</label>
-                <input type="date" id="invoiceDueDate" value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:ring-2 ring-indigo-500/50 outline-none" />
+                <input
+                  type="date"
+                  id="invoiceDueDate"
+                  value={dueDate}
+                  onChange={e => {
+                    setDueDate(e.target.value);
+                    if (errors.dueDate) setErrors({...errors, dueDate: undefined});
+                  }}
+                  className={cn(
+                    "w-full px-3 py-2 bg-white border rounded-lg text-sm focus:ring-2 ring-indigo-500/50 outline-none",
+                    errors.dueDate ? "border-rose-300" : "border-slate-300"
+                  )}
+                />
+                {errors.dueDate && <p className="text-rose-600 text-xs mt-1">{errors.dueDate}</p>}
               </div>
             </div>
             <div>
@@ -1333,6 +1474,52 @@ const NotificationPanel = ({ notifications, onClose }: { notifications: typeof r
 
 // --- Main Layout ---
 
+// --- LocalStorage Helpers ---
+const loadFromStorage = <T,>(key: string, fallback: T): T => {
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      // Convert date strings back to Date objects for specific keys
+      if (key === 'orbitos_invoices') {
+        return parsed.map((inv: any) => ({
+          ...inv,
+          dueDate: new Date(inv.dueDate)
+        })) as T;
+      }
+      if (key === 'orbitos_workLanes') {
+        const convertDates = (tasks: any[]) => tasks.map(task => ({
+          ...task,
+          due: new Date(task.due)
+        }));
+        return {
+          todo: convertDates(parsed.todo || []),
+          inProgress: convertDates(parsed.inProgress || []),
+          review: convertDates(parsed.review || [])
+        } as T;
+      }
+      if (key === 'orbitos_reports') {
+        return parsed.map((report: any) => ({
+          ...report,
+          createdAt: new Date(report.createdAt)
+        })) as T;
+      }
+      return parsed as T;
+    }
+  } catch (error) {
+    console.error(`Error loading ${key} from localStorage:`, error);
+  }
+  return fallback;
+};
+
+const saveToStorage = <T,>(key: string, value: T): void => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    console.error(`Error saving ${key} to localStorage:`, error);
+  }
+};
+
 export default function App() {
   const [currentView, setCurrentView] = useState<string>('overview');
   const [isAiOpen, setIsAiOpen] = useState(false);
@@ -1346,12 +1533,14 @@ export default function App() {
   const [isRebalancing, setIsRebalancing] = useState(false);
   const [aiMessage, setAiMessage] = useState(`"Motion team will hit 105% capacity by Friday. Recommend approving 20h overtime or shifting 3 non-urgent briefs."`);
 
-  const [onboardingState, setOnboardingState] = useState(initialOnboardingData);
-  const [clientState, setClientState] = useState(initialClientData);
-  const [invoices, setInvoices] = useState(initialInvoiceData);
-  const [workLanesState, setWorkLanesState] = useState(initialWorkLanes);
-  const [staffState, setStaffState] = useState(initialStaffData);
-  const [capacityState, setCapacityState] = useState(initialCapacityData);
+  // Load from localStorage or use initial data
+  const [onboardingState, setOnboardingState] = useState(() => loadFromStorage('orbitos_onboarding', initialOnboardingData));
+  const [clientState, setClientState] = useState(() => loadFromStorage('orbitos_clients', initialClientData));
+  const [invoices, setInvoices] = useState(() => loadFromStorage('orbitos_invoices', initialInvoiceData));
+  const [workLanesState, setWorkLanesState] = useState(() => loadFromStorage('orbitos_workLanes', initialWorkLanes));
+  const [staffState, setStaffState] = useState(() => loadFromStorage('orbitos_staff', initialStaffData));
+  const [capacityState, setCapacityState] = useState(() => loadFromStorage('orbitos_capacity', initialCapacityData));
+  const [reports, setReports] = useState(() => loadFromStorage('orbitos_reports', customReportsData));
   
   const [aiChatHistory, setAiChatHistory] = useState([
     { 
@@ -1398,6 +1587,35 @@ export default function App() {
         aiChatContainerRef.current.scrollTop = aiChatContainerRef.current.scrollHeight;
     }
   }, [aiChatHistory]);
+
+  // Persist state to localStorage whenever it changes
+  useEffect(() => {
+    saveToStorage('orbitos_onboarding', onboardingState);
+  }, [onboardingState]);
+
+  useEffect(() => {
+    saveToStorage('orbitos_clients', clientState);
+  }, [clientState]);
+
+  useEffect(() => {
+    saveToStorage('orbitos_invoices', invoices);
+  }, [invoices]);
+
+  useEffect(() => {
+    saveToStorage('orbitos_workLanes', workLanesState);
+  }, [workLanesState]);
+
+  useEffect(() => {
+    saveToStorage('orbitos_staff', staffState);
+  }, [staffState]);
+
+  useEffect(() => {
+    saveToStorage('orbitos_capacity', capacityState);
+  }, [capacityState]);
+
+  useEffect(() => {
+    saveToStorage('orbitos_reports', reports);
+  }, [reports]);
 
 
   const financeMetrics = useMemo(() => {
@@ -1567,7 +1785,30 @@ export default function App() {
       )
     );
   };
-  
+
+  const handleCreateReport = (newReport: any) => {
+    const reportWithDefaults = {
+      ...newReport,
+      id: Date.now(),
+      createdAt: new Date(),
+    };
+    setReports(prevState => [reportWithDefaults, ...prevState]);
+  };
+
+  const handleDeleteReport = (reportId: number) => {
+    if (window.confirm('Are you sure you want to delete this report?')) {
+      setReports(prevState => prevState.filter(report => report.id !== reportId));
+    }
+  };
+
+  const handleUpdateInvoiceStatus = (invoiceId: number, newStatus: 'Pending' | 'Paid' | 'Overdue') => {
+    setInvoices(prevState =>
+      prevState.map(invoice =>
+        invoice.id === invoiceId ? { ...invoice, status: newStatus } : invoice
+      )
+    );
+  };
+
   const handleAutoRebalance = () => {
     setIsRebalancing(true);
     
@@ -1687,16 +1928,16 @@ export default function App() {
   const ViewComponent = useMemo(() => {
     switch(currentView) {
       case 'overview': return () => <OverviewView onViewChange={setCurrentView} metrics={overviewMetrics} />;
-      case 'finance': return () => <FinanceView invoices={invoices} onCreateInvoiceClick={() => setIsCreateInvoiceModalOpen(true)} metrics={financeMetrics} />;
+      case 'finance': return () => <FinanceView invoices={invoices} onCreateInvoiceClick={() => setIsCreateInvoiceModalOpen(true)} onUpdateInvoiceStatus={handleUpdateInvoiceStatus} metrics={financeMetrics} />;
       case 'people': return () => <PeopleView onInviteClick={() => setIsInviteStaffModalOpen(true)} onAutoRebalance={handleAutoRebalance} isRebalancing={isRebalancing} staffData={staffState} capacityData={capacityState} aiMessage={aiMessage} />;
       case 'work': return () => <WorkView workLanes={workLanesState} onTaskMove={handleTaskMove} />;
       case 'clients': return () => <ClientsView clientData={clientState} onNewClientClick={() => setIsNewClientModalOpen(true)} onManageClick={handleOpenManageClient} />;
       case 'onboarding': return () => <OnboardingView onboardingData={onboardingState} onInviteClick={() => setIsInviteStaffModalOpen(true)} />;
-      case 'reports': return ReportsView;
+      case 'reports': return () => <ReportsView reports={reports} onCreateReport={handleCreateReport} onDeleteReport={handleDeleteReport} />;
       case 'settings': return () => <SettingsView staffData={staffState} onUpdateStaffRole={handleUpdateStaffRole} />;
       default: return () => <OverviewView onViewChange={setCurrentView} metrics={overviewMetrics} />;
     }
-  }, [currentView, onboardingState, clientState, invoices, workLanesState, staffState, capacityState, isRebalancing, aiMessage, financeMetrics, overviewMetrics]);
+  }, [currentView, onboardingState, clientState, invoices, workLanesState, staffState, capacityState, reports, isRebalancing, aiMessage, financeMetrics, overviewMetrics]);
 
   const SidebarItem = ({ icon: Icon, label, view, isActive, onClick }: any) => (
     <button onClick={onClick} className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors", isActive ? "bg-slate-800 text-white shadow-sm" : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200")}>
